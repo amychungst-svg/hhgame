@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>精靈世界 @HH (雲端同步版)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @keyframes float-anim {
+            0%, 100% { transform: translateY(0px); }
+            50% { transform: translateY(-8px); }
+        }
+        @keyframes pulse-boss {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+        }
+        .pixel-sprite {
+            image-rendering: pixelated;
+            animation: float-anim 3s ease-in-out infinite;
+        }
+        .boss-sprite {
+            animation: pulse-boss 1.5s ease-in-out infinite;
+        }
+    </style>
+</head>
+<body class="bg-gradient-to-br from-slate-950 via-purple-950 to-indigo-950 min-h-screen text-slate-100 font-sans">
+    <div id="app"></div>
+
+    <!-- 載入 Firebase 並掛載全域函式 -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/13.0.0/firebase-app.js";
+        import { getDatabase, ref, set, onValue } from "https://www.gstatic.com/firebasejs/13.0.0/firebase-database.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyBG4I2B8hTjbILYFRxeuLKJq4WL49T1KM8",
+            authDomain: "hhgame-d252a.firebaseapp.com",
+            projectId: "hhgame-d252a",
+            storageBucket: "hhgame-d252a.firebasestorage.app",
+            messagingSenderId: "914747425373",
+            appId: "1:914747425373:web:2c8a64da3b6bbb3ae043b4",
+            measurementId: "G-5CX40P1HL3"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getDatabase(app);
+
+        let memoryCache = {
+            users: [],
+            pending: [],
+            games: [],
+            store: []
+        };
+
+        let currentView = 'login';
+
+        // 預設資料
+        function getDefaultGames() {
+            return [{ id: 1, title: '魔法方塊冒險', thumb: '', html: '<div style="background:linear-gradient(135deg,#6366f1,#ec4899);height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;color:white;font-family:sans-serif;text-align:center;"><h1>✨ 魔法方塊冒險 ✨</h1><p style="margin:10px 0;">點擊下方按鈕賺取冒險積分！</p><button onclick="parent.earnGamePoints(50)" style="padding:16px 32px;background:#fbbf24;color:#000;border:none;border-radius:16px;font-weight:900;cursor:pointer;font-size:18px;box-shadow:0 4px 20px rgba(0,0,0,0.4);">獲得 50 積分</button></div>', playCount: 42, isBanned: false }];
+        }
+
+        function initCloudDB() {
+            const initialUsers = [
+                { id: 1, username: 'adminamy', password: 'chh2526122', role: 'admin', points: 999999, gender: 'girl', companions: [{ type: 'fire', exp: 1, weapon: null }], inventory: [1,3,5,11,17,23,25,27,33], equipped: {}, background: 33, friends: [], friendRequests: [], history: [], isBannedPoints: false, dailyEarned: 0, lastEarnDate: '', isOnline: false }
+            ];
+            set(ref(db, 'hh_data'), {
+                users: initialUsers,
+                pending: [],
+                games: getDefaultGames(),
+                store: []
+            });
+        }
+
+        // 雲端資料庫介面
+        window.CloudDB = {
+            getUsers() { return memoryCache.users; },
+            saveUsers(users) { set(ref(db, 'hh_data/users'), users); },
+            getPending() { return memoryCache.pending; },
+            savePending(list) { set(ref(db, 'hh_data/pending'), list); },
+            getSession() {
+                const u = localStorage.getItem('hh_session');
+                if (!u) return null;
+                let session = JSON.parse(u);
+                const users = CloudDB.getUsers();
+                const latest = users.find(x => x.id === session.id);
+                if (latest) {
+                    session = latest;
+                    if (session.role === 'admin' || session.username === 'adminamy') session.points = 999999;
+                }
+                return session;
+            },
+            setSession(user) {
+                if (user.role === 'admin' || user.username === 'adminamy') user.points = 999999;
+                localStorage.setItem('hh_session', JSON.stringify(user));
+                updateUserInDB(user);
+            },
+            clearSession() {
+                localStorage.removeItem('hh_session');
+            }
+        };
+
+        function updateUserInDB(sessionUser) {
+            let users = CloudDB.getUsers();
+            if (sessionUser.role === 'admin' || sessionUser.username === 'adminamy') sessionUser.points = 999999;
+            const idx = users.findIndex(x => x.id === sessionUser.id);
+            if (idx !== -1) {
+                users[idx] = sessionUser;
+                set(ref(db, 'hh_data/users'), users);
+            }
+        }
+
+        // 畫面渲染函數
+        function render() {
+            const appDiv = document.getElementById('app');
+            if (!appDiv) return;
+            const session = CloudDB.getSession();
+            if (!session && currentView !== 'register' && currentView !== 'pending') currentView = 'login';
+
+            let html = '';
+            if (currentView === 'login') html = renderLogin();
+            else if (currentView === 'register') html = renderRegister();
+            else if (currentView === 'pending') html = renderPendingNotice();
+            else {
+                html = renderNavbar(session) + '<div class="max-w-6xl mx-auto p-6">' + renderContent(session) + '</div>';
+            }
+            appDiv.innerHTML = html;
+        }
+
+        function renderNavbar(session) {
+            return `
+                <nav class="bg-slate-950/90 backdrop-blur-md shadow-xl sticky top-0 z-50 px-6 py-4 flex justify-between items-center rounded-b-3xl mx-4 mt-2 border-b-2 border-pink-500/30">
+                    <div class="flex items-center gap-4">
+                        <span class="text-2xl font-black bg-gradient-to-r from-pink-400 to-purple-400 bg-clip-text text-transparent">精靈世界 @HH</span>
+                        <span class="bg-purple-950 text-purple-200 text-xs px-3 py-1 rounded-full font-bold border border-purple-500/40">玩家：${session.username}</span>
+                        <span class="bg-amber-950 text-amber-200 text-xs px-3 py-1 rounded-full font-bold border border-amber-500/40">⭐ ${session.role === 'admin' ? '無限' : session.points} 點</span>
+                    </div>
+                    <div class="flex gap-4 font-bold text-sm items-center">
+                        <button onclick="window.navTo('home')" class="hover:text-pink-400 transition">首頁</button>
+                        ${session.role === 'admin' ? '<button onclick="window.navTo(\'admin\')" class="text-pink-400 font-black">管理員工作室</button>' : ''}
+                        <button onclick="window.logout()" class="text-slate-400">登出</button>
+                    </div>
+                </nav>
+            `;
+        }
+
+        function renderLogin() {
+            return `
+                <div class="min-h-screen flex flex-col items-center justify-center p-4">
+                    <div class="bg-slate-900 p-8 rounded-3xl shadow-2xl w-full max-w-md border-4 border-pink-500/40 space-y-6">
+                        <h1 class="text-3xl font-black text-center text-pink-400">精靈世界 @HH (雲端版)</h1>
+                        <input id="login-user" type="text" placeholder="帳號" class="w-full p-4 bg-slate-950 border-2 border-slate-800 rounded-2xl font-bold text-white outline-none">
+                        <input id="login-pass" type="password" placeholder="密碼" class="w-full p-4 bg-slate-950 border-2 border-slate-800 rounded-2xl font-bold text-white outline-none">
+                        <button onclick="window.handleLogin()" class="w-full py-4 bg-gradient-to-r from-pink-600 to-purple-600 font-black rounded-2xl text-white">登入</button>
+                        <button onclick="window.currentView='register'; window.renderApp();" class="w-full py-3 bg-slate-800 font-bold rounded-2xl text-slate-300">註冊帳號</button>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderRegister() {
+            return `
+                <div class="min-h-screen flex items-center justify-center p-4">
+                    <div class="bg-slate-900 p-8 rounded-3xl shadow-2xl w-full max-w-md border-4 border-purple-500/40 space-y-4">
+                        <h1 class="text-2xl font-black text-center text-pink-400">註冊 (需管理員審核)</h1>
+                        <input id="reg-user" type="text" placeholder="帳號" class="w-full p-4 bg-slate-950 border-2 border-slate-800 rounded-2xl font-bold text-white outline-none">
+                        <input id="reg-pass" type="password" placeholder="密碼" class="w-full p-4 bg-slate-950 border-2 border-slate-800 rounded-2xl font-bold text-white outline-none">
+                        <select id="reg-companion" class="w-full p-4 bg-slate-950 border-2 border-slate-800 rounded-2xl font-bold text-white outline-none">
+                            <option value="water">水屬性精靈</option>
+                            <option value="fire">火屬性精靈</option>
+                            <option value="grass">草屬性精靈</option>
+                            <option value="electricity">電屬性精靈</option>
+                            <option value="ice">冰屬性精靈</option>
+                        </select>
+                        <button onclick="window.handleRegister()" class="w-full py-4 bg-gradient-to-r from-pink-600 to-purple-600 font-black rounded-2xl text-white">送出申請</button>
+                        <button onclick="window.currentView='login'; window.renderApp();" class="w-full py-3 text-slate-400 font-bold">返回登入</button>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderPendingNotice() {
+            return `
+                <div class="min-h-screen flex items-center justify-center p-4">
+                    <div class="bg-slate-900 p-8 rounded-3xl shadow-2xl w-full max-w-md border-4 border-amber-500/40 text-center space-y-6">
+                        <h1 class="text-3xl font-black text-amber-400">⏳ 等待管理員審核中</h1>
+                        <button onclick="window.currentView='login'; window.renderApp();" class="w-full py-3 bg-slate-800 font-black rounded-xl text-white">返回登入</button>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderContent(session) {
+            if (currentView === 'home') return `<div class="text-center py-10"><h1 class="text-4xl font-black text-pink-400">歡迎回來，${session.username}！</h1><p class="text-slate-400 mt-2">雲端同步功能運作中，隨時可至管理員工作室審核帳號。</p></div>`;
+            if (currentView === 'admin') return renderAdmin();
+            return `<div class="text-center py-10"><h2 class="text-2xl font-black text-white">頁面載入中...</h2><button onclick="window.navTo('home')" class="mt-4 px-6 py-2 bg-pink-600 rounded-xl font-bold text-white">回首頁</button></div>`;
+        }
+
+        function renderAdmin() {
+            const pendingList = CloudDB.getPending();
+            return `
+                <div class="space-y-6">
+                    <h1 class="text-3xl font-black text-white">⚙️ 雲端管理員工作室</h1>
+                    <div class="bg-slate-900 p-6 rounded-3xl border-4 border-amber-500/30 space-y-4">
+                        <h2 class="text-xl font-black text-amber-400">待審核註冊申請 (${pendingList.length})</h2>
+                        ${pendingList.length === 0 ? '<p class="text-slate-400 font-bold">目前沒有等待審核的申請</p>' : ''}
+                        ${pendingList.map(p => `
+                            <div class="p-4 bg-slate-950 rounded-2xl flex justify-between items-center border border-slate-800">
+                                <div>
+                                    <div class="font-black text-white">帳號: ${p.username}</div>
+                                    <div class="text-xs text-slate-400">初始精靈: ${p.companionType}</div>
+                                </div>
+                                <div class="flex gap-2">
+                                    <button onclick="window.approveRegistration(${p.id})" class="px-4 py-2 bg-emerald-600 font-black rounded-xl text-sm text-white">允許</button>
+                                    <button onclick="window.declineRegistration(${p.id})" class="px-4 py-2 bg-red-600 font-black rounded-xl text-sm text-white">拒絕</button>
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            `;
+        }
+
+        // 綁定全域變數與函數供 HTML 呼叫
+        window.currentView = 'login';
+        window.renderApp = render;
+        window.navTo = (v) => { currentView = v; render(); };
+        window.logout = () => { CloudDB.clearSession(); currentView = 'login'; render(); };
+
+        window.handleLogin = () => {
+            const u = document.getElementById('login-user').value;
+            const p = document.getElementById('login-pass').value;
+            const users = CloudDB.getUsers();
+            const found = users.find(x => x.username === u && x.password === p);
+            if (found) {
+                CloudDB.setSession(found);
+                currentView = 'home';
+                render();
+            } else {
+                alert('帳號或密碼錯誤，或尚未通過審核！');
+            }
+        };
+
+        window.handleRegister = () => {
+            const u = document.getElementById('reg-user').value;
+            const p = document.getElementById('reg-pass').value;
+            const companionType = document.getElementById('reg-companion').value;
+            if (!u || !p) { alert('請填寫帳號密碼！'); return; }
+            let pending = CloudDB.getPending();
+            pending.push({ id: Date.now(), username: u, password: p, companionType, time: Date.now() });
+            CloudDB.savePending(pending);
+            currentView = 'pending';
+            render();
+        };
+
+        window.approveRegistration = (id) => {
+            let pending = CloudDB.getPending();
+            const p = pending.find(x => x.id === id);
+            if (p) {
+                let users = CloudDB.getUsers();
+                users.push({
+                    id: Date.now(), username: p.username, password: p.password, role: 'student', points: 100,
+                    gender: 'girl', companions: [{ type: p.companionType, exp: 1, weapon: null }], inventory: [], equipped: {}, background: '', friends: [], friendRequests: [], history: [], isBannedPoints: false
+                });
+                CloudDB.saveUsers(users);
+                pending = pending.filter(x => x.id !== id);
+                CloudDB.savePending(pending);
+                alert('已批准註冊！');
+                render();
+            }
+        };
+
+        window.declineRegistration = (id) => {
+            let pending = CloudDB.getPending();
+            pending = pending.filter(x => x.id !== id);
+            CloudDB.savePending(pending);
+            render();
+        };
+
+        // 啟動 Firebase 監聽
+        onValue(ref(db, 'hh_data'), (snapshot) => {
+            const data = snapshot.val();
+            if (data) {
+                memoryCache.users = data.users || [];
+                memoryCache.pending = data.pending || [];
+                memoryCache.games = data.games || getDefaultGames();
+                memoryCache.store = data.store || [];
+            } else {
+                initCloudDB();
+            }
+            render();
+        });
+    </script>
+</body>
+</html>
