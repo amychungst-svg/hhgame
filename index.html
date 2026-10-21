@@ -1,0 +1,882 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>精靈世界 @HH (完整雲端同步版)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @keyframes float-anim {
+            0%, 100% { transform: translateY(0px); }
+            50% { transform: translateY(-8px); }
+        }
+        @keyframes pulse-boss {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+        }
+        .pixel-sprite {
+            image-rendering: pixelated;
+            animation: float-anim 3s ease-in-out infinite;
+        }
+        .boss-sprite {
+            animation: pulse-boss 1.5s ease-in-out infinite;
+        }
+    </style>
+</head>
+<body class="bg-gradient-to-br from-slate-950 via-purple-950 to-indigo-950 min-h-screen text-slate-100 font-sans">
+    <div id="app"></div>
+
+    <!-- 載入 Firebase 雲端邏輯 -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/13.0.0/firebase-app.js";
+        import { getDatabase, ref, set, onValue } from "https://www.gstatic.com/firebasejs/13.0.0/firebase-database.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyBG4I2B8hTjbILYFRxeuLKJq4WL49T1KM8",
+            authDomain: "hhgame-d252a.firebaseapp.com",
+            projectId: "hhgame-d252a",
+            storageBucket: "hhgame-d252a.firebasestorage.app",
+            messagingSenderId: "914747425373",
+            appId: "1:914747425373:web:2c8a64da3b6bbb3ae043b4",
+            measurementId: "G-5CX40P1HL3"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getDatabase(app);
+
+        let memoryCache = {
+            users: [],
+            pending: [],
+            games: [],
+            store: []
+        };
+
+        function getDefaultGames() {
+            return [
+                { id: 1, title: '魔法方塊冒險', thumb: '', html: '<div style="background:linear-gradient(135deg,#6366f1,#ec4899);height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;color:white;font-family:sans-serif;text-align:center;"><h1>✨ 魔法方塊冒險 ✨</h1><p style="margin:10px 0;">點擊下方按鈕賺取冒險積分！</p><button onclick="parent.earnGamePoints(50)" style="padding:16px 32px;background:#fbbf24;color:#000;border:none;border-radius:16px;font-weight:900;cursor:pointer;font-size:18px;box-shadow:0 4px 20px rgba(0,0,0,0.4);">獲得 50 積分</button></div>', playCount: 42, isBanned: false }
+            ];
+        }
+
+        function getDefaultStore() {
+            return [
+                { id: 1, name: '藍色帽子', color: '#3b82f6', slot: 'hat', price: 500, icon: '🧢' },
+                { id: 2, name: '黃色帽子', color: '#eab308', slot: 'hat', price: 500, icon: '👒' },
+                { id: 3, name: '黑色墨鏡', color: '#0f172a', slot: 'glasses', price: 600, icon: '🕶️' },
+                { id: 4, name: '棕色墨鏡', color: '#78350f', slot: 'glasses', price: 600, icon: '🕶️' },
+                { id: 5, name: '紅色T恤', color: '#ef4444', slot: 'shirt', price: 800, icon: '👕' },
+                { id: 6, name: '黃色T恤', color: '#eab308', slot: 'shirt', price: 800, icon: '👕' },
+                { id: 7, name: '藍色T恤', color: '#3b82f6', slot: 'shirt', price: 800, icon: '👕' },
+                { id: 8, name: '棕色T恤', color: '#78350f', slot: 'shirt', price: 800, icon: '👕' },
+                { id: 9, name: '白色T恤', color: '#f8fafc', slot: 'shirt', price: 800, icon: '👕' },
+                { id: 10, name: '藍色T恤', color: '#3b82f6', slot: 'shirt', price: 800, icon: '👕' },
+                { id: 11, name: '紅色褲子', color: '#ef4444', slot: 'pants', price: 700, icon: '👖' },
+                { id: 12, name: '黃色褲子', color: '#eab308', slot: 'pants', price: 700, icon: '👖' },
+                { id: 13, name: '藍色褲子', color: '#3b82f6', slot: 'pants', price: 700, icon: '👖' },
+                { id: 14, name: '棕色褲子', color: '#78350f', slot: 'pants', price: 700, icon: '👖' },
+                { id: 15, name: '白色褲子', color: '#f8fafc', slot: 'pants', price: 700, icon: '👖' },
+                { id: 16, name: '藍色褲子', color: '#3b82f6', slot: 'pants', price: 700, icon: '👖' },
+                { id: 17, name: '紅色連衣裙', color: '#ef4444', slot: 'dress', price: 1200, icon: '👗' },
+                { id: 18, name: '黃色連衣裙', color: '#eab308', slot: 'dress', price: 1200, icon: '👗' },
+                { id: 19, name: '藍色連衣裙', color: '#3b82f6', slot: 'dress', price: 1200, icon: '👗' },
+                { id: 20, name: '棕色連衣裙', color: '#78350f', slot: 'dress', price: 1200, icon: '👗' },
+                { id: 21, name: '白色連衣裙', color: '#f8fafc', slot: 'dress', price: 1200, icon: '👗' },
+                { id: 22, name: '藍色連衣裙', color: '#3b82f6', slot: 'dress', price: 1200, icon: '👗' },
+                { id: 23, name: '綠色背包', color: '#059669', slot: 'handheld', price: 1000, icon: '🎒' },
+                { id: 24, name: '黃色向日葵', color: '#facc15', slot: 'handheld', price: 900, icon: '🌻' },
+                { id: 25, name: '紅色髮帶', color: '#ef4444', slot: 'hairclip', price: 500, icon: '🎀' },
+                { id: 26, name: '粉色髮帶', color: '#f472b6', slot: 'hairclip', price: 500, icon: '🎀' },
+                { id: 27, name: '紅色鞋子', color: '#ef4444', slot: 'shoes', price: 600, icon: '👟' },
+                { id: 28, name: '黃色鞋子', color: '#eab308', slot: 'shoes', price: 600, icon: '👟' },
+                { id: 29, name: '藍色鞋子', color: '#3b82f6', slot: 'shoes', price: 600, icon: '👟' },
+                { id: 30, name: '棕色鞋子', color: '#78350f', slot: 'shoes', price: 600, icon: '👟' },
+                { id: 31, name: '白色鞋子', color: '#f8fafc', slot: 'shoes', price: 600, icon: '👟' },
+                { id: 32, name: '藍色鞋子', color: '#3b82f6', slot: 'shoes', price: 600, icon: '👟' },
+                { id: 33, name: '遊樂場背景', svg: '<svg viewBox="0 0 100 100" class="w-full h-full"><rect width="100" height="100" fill="#38bdf8"/><circle cx="50" cy="50" r="30" fill="#bae6fd" opacity="0.5"/></svg>', color: 'from-sky-400 to-emerald-500', slot: 'background', price: 2000, icon: '🎡' },
+                { id: 34, name: '學校背景', svg: '<svg viewBox="0 0 100 100" class="w-full h-full"><rect width="100" height="100" fill="#b45309"/><path d="M0 50 Q50 20 100 50 L100 100 L0 100 Z" fill="#78350f" opacity="0.6"/></svg>', color: 'from-amber-700 to-orange-900', slot: 'background', price: 2000, icon: '🏫' },
+                { id: 35, name: '壁爐背景', svg: '<svg viewBox="0 0 100 100" class="w-full h-full"><rect width="100" height="100" fill="#991b1b"/><circle cx="50" cy="50" r="25" fill="#f59e0b" opacity="0.6"/></svg>', color: 'from-red-900 to-amber-950', slot: 'background', price: 2000, icon: '🔥' },
+                { id: 36, name: '家園背景', svg: '<svg viewBox="0 0 100 100" class="w-full h-full"><rect width="100" height="100" fill="#312e81"/><circle cx="50" cy="50" r="35" fill="#4338ca" opacity="0.5"/></svg>', color: 'from-indigo-900 to-purple-950', slot: 'background', price: 2000, icon: '🏠' },
+                { id: 37, name: '城堡背景', svg: '<svg viewBox="0 0 100 100" class="w-full h-full"><rect width="100" height="100" fill="#581c87"/><polygon points="20,100 20,50 50,30 80,50 80,100" fill="#6b21a8" opacity="0.7"/></svg>', color: 'from-purple-800 to-slate-900', slot: 'background', price: 2500, icon: '🏰' },
+                { id: 38, name: '森林背景', svg: '<svg viewBox="0 0 100 100" class="w-full h-full"><rect width="100" height="100" fill="#065f46"/><circle cx="30" cy="50" r="20" fill="#047857" opacity="0.6"/><circle cx="70" cy="60" r="25" fill="#047857" opacity="0.6"/></svg>', color: 'from-emerald-800 to-green-950', slot: 'background', price: 2500, icon: '🌲' }
+            ];
+        }
+
+        function initCloudDB() {
+            const initialUsers = [
+                { id: 1, username: 'adminamy', password: 'chh2526122', role: 'admin', points: 999999, gender: 'girl', companions: [{ type: 'fire', exp: 1, weapon: null }], inventory: [1,3,5,11,17,23,25,27,33,34,35,36,37,38], equipped: {}, background: 33, friends: [], friendRequests: [], history: [], isBannedPoints: false, dailyEarned: 0, lastEarnDate: '', isOnline: false }
+            ];
+            set(ref(db, 'hh_data'), {
+                users: initialUsers,
+                pending: [],
+                games: getDefaultGames(),
+                store: getDefaultStore()
+            });
+        }
+
+        // 資料庫物件封裝 (整合 Firebase 雲端與 Session)
+        window.DB = {
+            getUsers() { return memoryCache.users; },
+            saveUsers(users) { set(ref(db, 'hh_data/users'), users); },
+            getPending() { 
+                let list = memoryCache.pending || [];
+                const now = Date.now();
+                list = list.filter(p => now - p.time < 3600000); // 1小時自動過期
+                return list;
+            },
+            savePending(list) { set(ref(db, 'hh_data/pending'), list); },
+            getGames() { return memoryCache.games; },
+            saveGames(games) { set(ref(db, 'hh_data/games'), games); },
+            getSession() { 
+                const u = localStorage.getItem('hh_session'); 
+                if (!u) return null;
+                let session = JSON.parse(u);
+                const users = DB.getUsers();
+                const latest = users.find(x => x.id === session.id);
+                if (latest) session = latest;
+                if (session.role === 'admin' || session.username === 'adminamy') {
+                    session.points = 999999;
+                }
+                return session;
+            },
+            setSession(user) { 
+                if (user.role === 'admin' || user.username === 'adminamy') {
+                    user.points = 999999;
+                }
+                localStorage.setItem('hh_session', JSON.stringify(user)); 
+                let users = DB.getUsers();
+                let target = users.find(x => x.id === user.id);
+                if(target) { target.isOnline = true; DB.saveUsers(users); }
+            },
+            clearSession() { 
+                const session = DB.getSession();
+                if(session) {
+                    let users = DB.getUsers();
+                    let target = users.find(x => x.id === session.id);
+                    if(target) { target.isOnline = false; DB.saveUsers(users); }
+                }
+                localStorage.removeItem('hh_session'); 
+            }
+        };
+
+        window.currentView = 'login';
+        window.activeGame = null;
+
+        window.render = function() {
+            const app = document.getElementById('app');
+            if (!app) return;
+            const session = DB.getSession();
+            if (!session && currentView !== 'register' && currentView !== 'pending') currentView = 'login';
+
+            let html = '';
+            if (currentView === 'login') html = renderLogin();
+            else if (currentView === 'register') html = renderRegister();
+            else if (currentView === 'pending') html = renderPendingNotice();
+            else {
+                html = renderNavbar(session) + '<div class="max-w-6xl mx-auto p-6">' + renderContent(session) + '</div>';
+            }
+            app.innerHTML = html;
+        }
+
+        window.renderNavbar = function(session) {
+            return `
+                <nav class="bg-slate-950/90 backdrop-blur-md shadow-xl sticky top-0 z-50 px-6 py-4 flex justify-between items-center rounded-b-3xl mx-4 mt-2 border-b-2 border-pink-500/30">
+                    <div class="flex items-center gap-4">
+                        <span class="text-2xl font-black bg-gradient-to-r from-pink-400 to-purple-400 bg-clip-text text-transparent">精靈世界 @HH (雲端版)</span>
+                        <span class="bg-purple-950 text-purple-200 text-xs px-3 py-1 rounded-full font-bold border border-purple-500/40 flex items-center gap-1.5"><span class="w-2.5 h-2.5 bg-emerald-500 rounded-full inline-block animate-pulse"></span>玩家：${session.username}</span>
+                        <span class="bg-amber-950 text-amber-200 text-xs px-3 py-1 rounded-full font-bold border border-amber-500/40">⭐ ${session.role === 'admin' ? '無限 (999999)' : session.points} 點</span>
+                    </div>
+                    <div class="flex gap-4 font-bold text-sm items-center">
+                        <button onclick="window.navTo('home')" class="hover:text-pink-400 transition">首頁</button>
+                        <button onclick="window.navTo('library')" class="hover:text-pink-400 transition">遊戲中心</button>
+                        <button onclick="window.navTo('homeland')" class="hover:text-pink-400 transition">家園與衣櫥</button>
+                        <button onclick="window.navTo('castle')" class="hover:text-pink-400 transition">城堡挑戰</button>
+                        <button onclick="window.navTo('store')" class="hover:text-pink-400 transition">服裝商店</button>
+                        <button onclick="window.navTo('ranking')" class="hover:text-pink-400 transition">精靈大師排行</button>
+                        <button onclick="window.navTo('friends')" class="hover:text-pink-400 transition">好友系統</button>
+                        ${session.role === 'admin' ? '<button onclick="window.navTo(\'admin\')" class="text-pink-400 hover:text-pink-300 transition">管理員工作室</button>' : ''}
+                        <button onclick="window.logout()" class="text-slate-400 hover:text-slate-200 transition">登出</button>
+                    </div>
+                </nav>
+            `;
+        }
+
+        window.renderLogin = function() {
+            return `
+                <div class="min-h-screen flex flex-col items-center justify-center p-4">
+                    <div class="bg-slate-900/90 backdrop-blur-xl p-8 rounded-3xl shadow-2xl w-full max-w-md border-4 border-pink-500/40 space-y-6">
+                        <div class="text-center space-y-2">
+                            <h1 class="text-4xl font-black bg-gradient-to-r from-pink-400 to-purple-400 bg-clip-text text-transparent">精靈世界 @HH</h1>
+                            <p class="text-slate-300 font-bold text-sm">跨裝置雲端同步版 - 探索世界、養成精靈！</p>
+                        </div>
+                        <div class="space-y-4">
+                            <input id="login-user" type="text" placeholder="請輸入帳號" class="w-full p-4 bg-slate-950 border-2 border-slate-800 rounded-2xl focus:border-pink-500 outline-none font-bold text-white">
+                            <input id="login-pass" type="password" placeholder="請輸入密碼" class="w-full p-4 bg-slate-950 border-2 border-slate-800 rounded-2xl focus:border-pink-500 outline-none font-bold text-white">
+                            <button onclick="window.handleLogin()" class="w-full py-4 bg-gradient-to-r from-pink-600 to-purple-600 text-white font-black rounded-2xl shadow-lg hover:opacity-95 transition">登入冒險</button>
+                            <button onclick="window.currentView='register'; window.render();" class="w-full py-3 bg-slate-800 text-slate-300 font-bold rounded-2xl hover:bg-slate-700 transition">註冊帳號</button>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        window.renderRegister = function() {
+            return `
+                <div class="min-h-screen flex items-center justify-center p-4">
+                    <div class="bg-slate-900/90 backdrop-blur-xl p-8 rounded-3xl shadow-2xl w-full max-w-md border-4 border-purple-500/40">
+                        <h1 class="text-3xl font-black text-center mb-6 text-pink-400">註冊帳號 (需管理員審核)</h1>
+                        <div class="space-y-4">
+                            <input id="reg-user" type="text" placeholder="帳號 (英文與數字)" class="w-full p-4 bg-slate-950 border-2 border-slate-800 rounded-2xl outline-none font-bold text-white">
+                            <input id="reg-pass" type="password" placeholder="密碼" class="w-full p-4 bg-slate-950 border-2 border-slate-800 rounded-2xl outline-none font-bold text-white">
+                            <div>
+                                <label class="block font-bold text-sm text-slate-300 mb-2">初始制服造型</label>
+                                <div class="flex gap-4">
+                                    <label class="flex-1 border-2 border-slate-800 p-3 rounded-2xl text-center cursor-pointer font-bold bg-slate-950"><input type="radio" name="reg-gender" value="boy"> 男生制服</label>
+                                    <label class="flex-1 border-2 border-slate-800 p-3 rounded-2xl text-center cursor-pointer font-bold bg-slate-950"><input type="radio" name="reg-gender" value="girl" checked> 女生制服</label>
+                                </div>
+                            </div>
+                            <div>
+                                <label class="block font-bold text-sm text-slate-300 mb-2">選擇初始精靈夥伴</label>
+                                <select id="reg-companion" class="w-full p-4 bg-slate-950 border-2 border-slate-800 rounded-2xl font-bold outline-none text-white">
+                                    <option value="water">水屬性精靈</option>
+                                    <option value="fire">火屬性精靈</option>
+                                    <option value="grass">草屬性精靈</option>
+                                    <option value="electricity">電屬性精靈</option>
+                                    <option value="ice">冰屬性精靈</option>
+                                </select>
+                            </div>
+                            <button onclick="window.handleRegister()" class="w-full py-4 bg-gradient-to-r from-pink-600 to-purple-600 text-white font-black rounded-2xl shadow-lg">提交註冊申請</button>
+                            <button onclick="window.currentView='login'; window.render();" class="w-full py-3 text-slate-400 font-bold">返回登入</button>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        window.renderPendingNotice = function() {
+            return `
+                <div class="min-h-screen flex items-center justify-center p-4">
+                    <div class="bg-slate-900/90 backdrop-blur-xl p-8 rounded-3xl shadow-2xl w-full max-w-md border-4 border-amber-500/40 text-center space-y-6">
+                        <h1 class="text-3xl font-black text-amber-400">⏳ 等待管理員審核中</h1>
+                        <p class="text-slate-300 font-bold">您的申請已送至雲端，請等待管理員審核。</p>
+                        <button onclick="window.currentView='login'; window.render();" class="w-full py-3.5 bg-slate-800 text-white font-black rounded-2xl shadow hover:bg-slate-700 transition">返回登入頁面</button>
+                    </div>
+                </div>
+            `;
+        }
+
+        window.renderContent = function(session) {
+            if (currentView === 'home') return `
+                <div class="space-y-8">
+                    <div class="bg-slate-900/90 backdrop-blur-md p-10 rounded-3xl shadow-xl border-4 border-pink-500/30 text-center">
+                        <h1 class="text-5xl font-black mb-4 bg-gradient-to-r from-pink-400 to-purple-400 bg-clip-text text-transparent">精靈世界 @HH</h1>
+                        <p class="text-slate-300 font-bold text-lg">跨裝置雲端同步已啟動！手機與電腦完美互通。</p>
+                    </div>
+                    <div class="grid md:grid-cols-4 gap-6">
+                        <div onclick="window.navTo('library')" class="bg-gradient-to-br from-amber-500 to-yellow-600 p-8 rounded-3xl shadow-lg cursor-pointer hover:scale-105 transition font-black text-2xl text-slate-950">🎮 遊戲中心</div>
+                        <div onclick="window.navTo('homeland')" class="bg-gradient-to-br from-emerald-500 to-teal-600 p-8 rounded-3xl shadow-lg cursor-pointer hover:scale-105 transition font-black text-2xl text-slate-950">🏡 家園與衣櫥</div>
+                        <div onclick="window.navTo('castle')" class="bg-gradient-to-br from-red-500 to-rose-600 p-8 rounded-3xl shadow-lg cursor-pointer hover:scale-105 transition font-black text-2xl text-slate-950">🏰 城堡挑戰</div>
+                        <div onclick="window.navTo('ranking')" class="bg-gradient-to-br from-cyan-500 to-blue-600 p-8 rounded-3xl shadow-lg cursor-pointer hover:scale-105 transition font-black text-2xl text-slate-950">🏆 精靈大師排行</div>
+                    </div>
+                </div>
+            `;
+            if (currentView === 'library') return renderLibrary();
+            if (currentView === 'playgame') return renderPlayGame();
+            if (currentView === 'homeland') return renderHomeland(session);
+            if (currentView === 'castle') return renderCastle(session);
+            if (currentView === 'store') return renderStore(session);
+            if (currentView === 'ranking') return renderRanking();
+            if (currentView === 'friends') return renderFriends(session);
+            if (currentView === 'admin') return renderAdmin();
+            return '';
+        }
+
+        // --- Avatar SVG ---
+        window.renderAvatarSVG = function(gender, equipped) {
+            const uniformShirt = gender === 'boy' ? '#2563eb' : '#db2777';
+            const uniformPants = '#1e293b';
+            
+            const hatColor = equipped.hat ? getStoreItemColor(equipped.hat) : 'transparent';
+            const glassesColor = equipped.glasses ? getStoreItemColor(equipped.glasses) : 'transparent';
+            const shirtColor = equipped.shirt ? getStoreItemColor(equipped.shirt) : uniformShirt;
+            const pantsColor = equipped.pants ? getStoreItemColor(equipped.pants) : uniformPants;
+            const dressColor = equipped.dress ? getStoreItemColor(equipped.dress) : '';
+            const shoesColor = equipped.shoes ? getStoreItemColor(equipped.shoes) : '#0f172a';
+            const handheldItem = equipped.handheld ? getStoreItemObject(equipped.handheld) : null;
+            const hairclipColor = equipped.hairclip ? getStoreItemColor(equipped.hairclip) : '';
+
+            return `
+                <svg width="160" height="220" viewBox="0 0 160 220" class="mx-auto pixel-sprite">
+                    <ellipse cx="80" cy="205" rx="42" ry="10" fill="rgba(0,0,0,0.4)" />
+                    <rect x="56" y="152" width="14" height="40" fill="${dressColor ? 'transparent' : pantsColor}" rx="3" />
+                    <rect x="90" y="152" width="14" height="40" fill="${dressColor ? 'transparent' : pantsColor}" rx="3" />
+                    <rect x="50" y="190" width="20" height="12" fill="${shoesColor}" rx="4" />
+                    <rect x="86" y="190" width="20" height="12" fill="${shoesColor}" rx="4" />
+                    
+                    <rect x="46" y="86" width="68" height="68" fill="${dressColor || shirtColor}" rx="12" />
+                    <rect x="73" y="86" width="14" height="66" fill="rgba(255,255,255,0.25)" />
+
+                    <rect x="32" y="96" width="12" height="26" fill="#fed7aa" rx="5" />
+                    <rect x="116" y="96" width="12" height="26" fill="#fed7aa" rx="5" />
+                    ${handheldItem ? `<text x="118" y="112" font-size="20">${handheldItem.icon}</text>` : ''}
+
+                    <rect x="45" y="20" width="70" height="68" fill="#fed7aa" rx="14" />
+                    <rect x="58" y="44" width="8" height="10" fill="#0f172a" rx="2" />
+                    <rect x="94" y="44" width="8" height="10" fill="#0f172a" rx="2" />
+                    <circle cx="60" cy="46" r="2.5" fill="#fff" />
+                    <circle cx="96" cy="46" r="2.5" fill="#fff" />
+                    <rect x="72" y="60" width="16" height="4" fill="#fb7185" opacity="0.7" rx="2" />
+
+                    ${gender === 'boy' ? '<rect x="40" y="10" width="80" height="26" fill="#1e293b" rx="8" /><rect x="38" y="26" width="12" height="34" fill="#1e293b" rx="4" />' : '<path d="M42 38 Q45 6 80 10 Q115 6 118 38 Z" fill="#b45309" /><rect x="40" y="28" width="14" height="38" fill="#b45309" rx="4" /><rect x="106" y="28" width="12" height="34" fill="#b45309" rx="4" />'}
+                    ${equipped.hat ? `<rect x="36" y="4" width="88" height="18" fill="${hatColor}" rx="6" />` : ''}
+                    ${equipped.glasses ? `<rect x="52" y="40" width="56" height="16" fill="${glassesColor}" rx="4" /><line x1="74" y1="48" x2="86" y2="48" stroke="#94a3b8" stroke-width="2"/>` : ''}
+                    ${equipped.hairclip ? `<circle cx="104" cy="24" r="8" fill="${hairclipColor}" />` : ''}
+                </svg>
+            `;
+        }
+
+        window.getCompanionName = function(type, exp, username) {
+            let tier = 1;
+            if (exp > 20000 && exp <= 45000) tier = 2;
+            else if (exp > 45000 && exp <= 70000) tier = 3;
+            else if (exp > 70000 && exp <= 100000) tier = 4;
+            else if (exp > 100000) tier = 5;
+
+            const nameMap = {
+                water: ['泡泡耳獸', '巨浪角獸', '飛翼潮獸', '裝甲水靈獸', '聖光海皇獸'],
+                fire: ['火苗耳獸', '烈焰角獸', '飛翼火獸', '戰鬥炎靈獸', '太陽聖炎獸'],
+                grass: ['嫩芽耳獸', '巨藤角獸', '飛翼森獸', '森之木靈獸', '永恆森皇獸'],
+                electricity: ['電光耳獸', '閃電角獸', '飛翼雷獸', '雷霆戰獸', '穹蒼雷神獸'],
+                ice: ['冰晶耳獸', '霜凍角獸', '飛翼冰獸', '冰甲雪靈獸', '極光冰皇獸']
+            };
+            const typeList = nameMap[type] || nameMap.water;
+            return `${username || '玩家'}的${typeList[tier - 1]}`;
+        }
+
+        window.renderCompanionSVG = function(c, ownerName) {
+            const exp = c.exp;
+            let tier = 1;
+            if (exp > 20000 && exp <= 45000) tier = 2;
+            else if (exp > 45000 && exp <= 70000) tier = 3;
+            else if (exp > 70000 && exp <= 100000) tier = 4;
+            else if (exp > 100000) tier = 5;
+
+            const fullName = getCompanionName(c.type, exp, ownerName);
+            const palettes = {
+                water: { primary: '#38bdf8', secondary: '#0284c7', accent: '#bae6fd', emoji: '💧' },
+                fire: { primary: '#fb923c', secondary: '#ea580c', accent: '#fed7aa', emoji: '🔥' },
+                grass: { primary: '#4ade80', secondary: '#16a34a', accent: '#bbf7d0', emoji: '🌿' },
+                electricity: { primary: '#facc15', secondary: '#ca8a04', accent: '#fef08a', emoji: '⚡' },
+                ice: { primary: '#93c5fd', secondary: '#3b82f6', accent: '#e0f2fe', emoji: '❄️' }
+            };
+            const pal = palettes[c.type] || palettes.water;
+
+            return `
+                <div class="flex flex-col items-center justify-center p-6 bg-slate-900/90 rounded-3xl border-2 border-purple-500/35 shadow-xl relative overflow-hidden">
+                    ${tier === 5 ? `<div class="absolute inset-0 bg-gradient-to-r from-amber-500/20 to-purple-500/20 rounded-3xl animate-pulse flex items-center justify-center"><span class="text-6xl opacity-30">${pal.emoji}</span></div>` : ''}
+                    <svg width="140" height="140" viewBox="0 0 140 140" class="pixel-sprite relative z-10">
+                        <ellipse cx="70" cy="122" rx="26" ry="7" fill="${pal.accent}" opacity="0.7" />
+                        ${tier >= 4 ? `<rect x="42" y="85" width="10" height="20" fill="${pal.secondary}" rx="3" /><rect x="88" y="85" width="10" height="20" fill="${pal.secondary}" rx="3" /><rect x="50" y="102" width="12" height="10" fill="#0f172a" rx="3" /><rect x="78" y="102" width="12" height="10" fill="#0f172a" rx="3" />` : ''}
+                        ${tier >= 3 ? `<path d="M 40 50 Q 20 30 35 70 Z" fill="${tier === 5 ? '#facc15' : pal.secondary}" opacity="0.85" /><path d="M 100 50 Q 120 30 105 70 Z" fill="${tier === 5 ? '#facc15' : pal.secondary}" opacity="0.85" />` : ''}
+                        <circle cx="70" cy="70" r="${tier === 2 ? 34 : 28}" fill="${pal.primary}" stroke="#0f172a" stroke-width="3" />
+                        <circle cx="58" cy="62" r="5" fill="#0f172a" /><circle cx="82" cy="62" r="5" fill="#0f172a" />
+                        <circle cx="59" cy="61" r="1.5" fill="#fff" /><circle cx="83" cy="61" r="1.5" fill="#fff" />
+                        <path d="M 62 76 Q 70 82 78 76" stroke="#0f172a" stroke-width="3" fill="none" />
+                        ${tier === 1 ? `<polygon points="45,45 30,30 45,60" fill="${pal.secondary}" stroke="#0f172a" stroke-width="2" /><polygon points="95,45 110,30 95,60" fill="${pal.secondary}" stroke="#0f172a" stroke-width="2" />` : ''}
+                        ${tier >= 2 ? `<polygon points="42,42 22,22 46,58" fill="${pal.secondary}" stroke="#0f172a" stroke-width="2" /><polygon points="98,42 118,22 94,58" fill="${pal.secondary}" stroke="#0f172a" stroke-width="2" />` : ''}
+                        ${tier === 5 && c.weapon ? `<g transform="translate(95, 60)">${c.weapon === 'sword' ? '<rect x="0" y="-15" width="4" height="30" fill="#cbd5e1" /><rect x="-4" y="0" width="12" height="4" fill="#b45309" />' : ''}${c.weapon === 'gun' ? '<rect x="-5" y="-3" width="20" height="8" fill="#334155" /><rect x="5" y="3" width="6" height="8" fill="#1e293b" />' : ''}${c.weapon === 'wand' ? '<circle cx="6" cy="-12" r="7" fill="#ec4899" /><rect x="4" y="-5" width="4" height="24" fill="#a16207" />' : ''}</g>` : ''}
+                    </svg>
+                    <div class="mt-2 font-black text-xs text-pink-300">${fullName}</div>
+                    <div class="mt-2 font-black text-sm bg-purple-950 text-purple-200 px-4 py-1.5 rounded-full shadow-sm border border-purple-500/40 relative z-10">冒險經驗: ${exp}</div>
+                </div>
+            `;
+        }
+
+        window.renderBossSVG = function(levelIdx, state = 'normal') {
+            const colors = ['#dc2626', '#ea580c', '#d97706', '#ca8a04', '#16a34a', '#0d9488', '#0284c7', '#2563eb', '#7c3aed', '#db2777', '#991b1b', '#7c2d12', '#78350f', '#365314', '#064e3b', '#164e63', '#1e3a8a', '#3b0764', '#500724', '#000000'];
+            const color = colors[levelIdx % colors.length];
+            const sizeScale = 1 + (levelIdx * 0.04);
+            const weapons = ['⚔️', '🗡️', '🛡️', '🔱', '🪄', '🏹', '🔨', '🪓', '⚡', '🔥'];
+            const weapon = weapons[levelIdx % weapons.length];
+
+            let face = `<circle cx="72" cy="95" r="7" fill="#facc15" /><circle cx="108" cy="95" r="7" fill="#facc15" /><circle cx="72" cy="95" r="3" fill="#000" /><circle cx="108" cy="95" r="3" fill="#000" /><path d="M 75 115 Q 90 100 105 115" stroke="#000" stroke-width="4" fill="none" />`;
+            if (state === 'dead') {
+                face = `<text x="65" y="100" font-size="16" font-weight="900" fill="#000">❌</text><text x="100" y="100" font-size="16" font-weight="900" fill="#000">❌</text><path d="M 75 115 Q 90 125 105 115" stroke="#000" stroke-width="4" fill="none" />`;
+            }
+            const scaleClass = state === 'giant' ? 'transform scale-[5] transition-transform duration-500' : 'boss-sprite';
+
+            return `
+                <div class="flex items-center justify-center my-4 overflow-hidden">
+                    <svg width="${160 * sizeScale}" height="${160 * sizeScale}" viewBox="0 0 180 180" class="${scaleClass} mx-auto">
+                        <ellipse cx="90" cy="160" rx="${40 + levelIdx}" ry="12" fill="rgba(239, 68, 68, 0.4)" />
+                        <polygon points="90,15 ${50 - levelIdx},60 ${130 + levelIdx},60" fill="${color}" />
+                        <circle cx="90" cy="95" r="${35 + (levelIdx * 1.5)}" fill="${color}" stroke="#000" stroke-width="3" />
+                        ${levelIdx >= 5 ? `<circle cx="50" cy="95" r="12" fill="#fbbf24" /><circle cx="130" cy="95" r="12" fill="#fbbf24" />` : ''}
+                        ${levelIdx >= 10 ? `<text x="125" y="70" font-size="28">${weapon}</text>` : ''}
+                        ${face}
+                    </svg>
+                </div>
+            `;
+        }
+
+        window.getStoreItemColor = function(itemId) {
+            const store = getDefaultStore();
+            const item = store.find(i => i.id == itemId);
+            return item ? item.color : '#000';
+        }
+
+        window.getStoreItemObject = function(itemId) {
+            const store = getDefaultStore();
+            return store.find(i => i.id == itemId) || null;
+        }
+
+        window.navTo = function(view) { currentView = view; render(); }
+
+        window.recordHistory = function(user, action) {
+            if (!user.history) user.history = [];
+            user.history.unshift({ time: new Date().toLocaleString(), action });
+            if (user.history.length > 50) user.history.pop();
+        }
+
+        window.earnGamePoints = function(pts) {
+            const session = DB.getSession();
+            if (!session) return;
+            if (session.isBannedPoints) { alert('您的積分功能已被禁分！'); return; }
+
+            const today = new Date().toDateString();
+            if (session.lastEarnDate !== today) {
+                session.lastEarnDate = today;
+                session.dailyEarned = 0;
+            }
+            if (session.dailyEarned >= 500) {
+                alert('您今天從遊戲中獲得的積分已達上限 (500點)！');
+                return;
+            }
+
+            const actualPts = Math.min(pts, 500 - session.dailyEarned);
+            session.dailyEarned += actualPts;
+            session.points += actualPts;
+            recordHistory(session, `遊玩遊戲獲得 ${actualPts} 積分`);
+            DB.setSession(session);
+            updateUserInDB(session);
+            alert(`恭喜獲得 ${actualPts} 冒險積分！`);
+            render();
+        };
+
+        window.handleLogin = function() {
+            const u = document.getElementById('login-user').value;
+            const p = document.getElementById('login-pass').value;
+            const users = DB.getUsers();
+            const found = users.find(x => x.username === u && x.password === p);
+            if (found) {
+                if (found.role === 'admin' || found.username === 'adminamy') found.points = 999999;
+                recordHistory(found, '登入網站');
+                DB.setSession(found);
+                updateUserInDB(found);
+                currentView = 'home';
+                render();
+            } else {
+                alert('帳號或密碼錯誤，或尚未通過管理員審核！');
+            }
+        }
+
+        window.handleRegister = function() {
+            const u = document.getElementById('reg-user').value;
+            const p = document.getElementById('reg-pass').value;
+            const gender = document.querySelector('input[name="reg-gender"]:checked').value;
+            const companionType = document.getElementById('reg-companion').value;
+
+            if (!/^[A-Za-z0-9]+$/.test(u)) { alert('帳號僅限英文字母與數字！'); return; }
+            const users = DB.getUsers();
+            if (users.some(x => x.username === u)) { alert('帳號已被註冊！'); return; }
+            let pending = DB.getPending();
+            if (pending.some(x => x.username === u)) { alert('此帳號已有審核中的申請！'); return; }
+
+            pending.push({ id: Date.now(), username: u, password: p, gender, companionType, time: Date.now() });
+            DB.savePending(pending);
+            currentView = 'pending';
+            render();
+        }
+
+        window.logout = function() { DB.clearSession(); currentView = 'login'; render(); }
+
+        // --- 城堡挑戰系統 ---
+        const bossHpList = [200, 1000, 1500, 3000, 5000, 8000, 10000, 15000, 18000, 25000, 35000, 45000, 55000, 65000, 80000, 95000, 100000, 120000, 150000, 200000];
+
+        window.renderCastle = function(session) {
+            return `
+                <div class="space-y-6">
+                    <h1 class="text-4xl font-black text-white">🏰 城堡 Boss 挑戰 (共 20 層)</h1>
+                    <div class="bg-slate-900/90 backdrop-blur-md p-8 rounded-3xl shadow-xl border-4 border-red-500/30 space-y-6">
+                        <div class="grid md:grid-cols-4 gap-4">
+                            ${bossHpList.map((hp, idx) => `
+                                <div class="p-5 bg-slate-950 rounded-2xl border-2 border-slate-800 text-center space-y-3 flex flex-col justify-between">
+                                    <div>
+                                        <div class="text-xl font-black text-amber-400">第 ${idx + 1} 層</div>
+                                        <div class="text-sm font-bold text-slate-300 mt-2">Boss HP: ${hp}</div>
+                                    </div>
+                                    <button onclick="window.openBossRoom(${idx})" class="w-full py-2.5 bg-red-600 text-white font-black rounded-xl text-sm shadow hover:bg-red-700 transition">進入房間</button>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                </div>
+                <div id="boss-modal"></div>
+            `;
+        }
+
+        window.openBossRoom = function(levelIdx) {
+            const session = DB.getSession();
+            const bossHp = bossHpList[levelIdx];
+            const html = `
+                <div class="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+                    <div class="bg-slate-900 p-8 rounded-3xl max-w-md w-full space-y-6 text-center shadow-2xl border-4 border-red-500/40">
+                        <h3 class="text-3xl font-black text-red-400">🏰 第 ${levelIdx + 1} 層 Boss 房間</h3>
+                        <div class="p-4 bg-slate-950 rounded-2xl border border-slate-800 space-y-3">
+                            <div class="text-sm font-bold text-slate-300">Boss 血量 (HP)</div>
+                            <div class="text-4xl font-black text-amber-400">${bossHp}</div>
+                            <div id="boss-container" onclick="window.clickBoss(${levelIdx})" title="點擊攻擊 Boss！" class="cursor-pointer">
+                                ${renderBossSVG(levelIdx, 'normal')}
+                            </div>
+                        </div>
+                        <div>
+                            <label class="block font-bold text-sm text-slate-300 mb-2">選擇出戰精靈</label>
+                            <select id="selected-pet" class="w-full p-3 bg-slate-950 border-2 border-slate-800 rounded-xl font-bold text-white">
+                                ${session.companions.map((c, i) => `<option value="${i}">${getCompanionName(c.type, c.exp, session.username)} (經驗值: ${c.exp})</option>`).join('')}
+                            </select>
+                        </div>
+                        <button onclick="window.fightBoss(${levelIdx})" class="w-full py-3.5 bg-gradient-to-r from-red-600 to-amber-600 text-white font-black rounded-2xl shadow-lg">確認判定挑戰結果</button>
+                        <button onclick="document.getElementById('boss-modal').innerHTML=''" class="w-full py-2.5 bg-slate-800 text-slate-300 font-bold rounded-xl">離開房間</button>
+                    </div>
+                </div>
+            `;
+            document.getElementById('boss-modal').innerHTML = html;
+        }
+
+        window.clickBoss = function(levelIdx) {
+            const container = document.getElementById('boss-container');
+            container.innerHTML = renderBossSVG(levelIdx, 'normal');
+            alert('攻擊命中 Boss！');
+        }
+
+        window.fightBoss = function(levelIdx) {
+            const session = DB.getSession();
+            const petIdx = parseInt(document.getElementById('selected-pet').value);
+            const pet = session.companions[petIdx];
+            const bossHp = bossHpList[levelIdx];
+
+            let win = pet.exp > bossHp ? true : (pet.exp === bossHp ? Math.random() < 0.5 : false);
+            const container = document.getElementById('boss-container');
+            if (container) container.innerHTML = renderBossSVG(levelIdx, win ? 'dead' : 'giant');
+
+            setTimeout(() => {
+                document.getElementById('boss-modal').innerHTML = '';
+                if (win) {
+                    session.points += 1000;
+                    recordHistory(session, `挑戰城堡第 ${levelIdx + 1} 層 Boss 勝利`);
+                    DB.setSession(session);
+                    updateUserInDB(session);
+                    alert(`🎉 挑戰成功！獲得額外 1000 積分獎勵！`);
+                } else {
+                    recordHistory(session, `挑戰城堡第 ${levelIdx + 1} 層 Boss 失敗`);
+                    alert(`❌ 挑戰失敗！精靈實力尚需提升！`);
+                }
+                render();
+            }, 1200);
+        }
+
+        // --- 遊戲中心與沙盒 ---
+        window.renderLibrary = function() {
+            const games = DB.getGames().filter(g => !g.isBanned);
+            return `
+                <div class="space-y-6">
+                    <h1 class="text-4xl font-black text-white">🎮 遊戲中心</h1>
+                    <div class="grid md:grid-cols-3 gap-6">
+                        ${games.map(g => `
+                            <div class="bg-slate-900/90 backdrop-blur-md rounded-3xl p-6 shadow-xl border-4 border-pink-500/30 flex flex-col justify-between">
+                                <div>
+                                    <div class="h-44 bg-slate-950 rounded-2xl mb-4 flex items-center justify-center overflow-hidden font-black text-slate-400">
+                                        ${g.thumb ? `<img src="${g.thumb}" class="w-full h-full object-cover">` : '遊戲預覽圖'}
+                                    </div>
+                                    <h3 class="text-2xl font-black text-white">${g.title}</h3>
+                                    <p class="text-slate-400 font-bold text-sm mt-1">遊玩次數：${g.playCount}</p>
+                                </div>
+                                <button onclick="window.playGame(${g.id})" class="mt-6 py-3 bg-gradient-to-r from-pink-600 to-purple-600 text-white font-black rounded-2xl hover:opacity-95 transition shadow-md">進入遊戲</button>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            `;
+        }
+
+        window.playGame = function(id) {
+            const games = DB.getGames();
+            const g = games.find(x => x.id === id);
+            const session = DB.getSession();
+            if (g && !g.isBanned) {
+                g.playCount++;
+                DB.saveGames(games);
+                recordHistory(session, `遊玩遊戲: ${g.title}`);
+                updateUserInDB(session);
+                activeGame = g;
+                currentView = 'playgame';
+                render();
+            }
+        }
+
+        window.renderPlayGame = function() {
+            const blob = new Blob([activeGame.html_content || activeGame.html], { type: 'text/html' });
+            const blobUrl = URL.createObjectURL(blob);
+            return `
+                <div class="space-y-4">
+                    <button onclick="window.currentView='library'; window.render();" class="px-5 py-2.5 bg-slate-800 text-white font-black rounded-xl shadow-md hover:bg-slate-700 transition">⬅ 返回遊戲中心</button>
+                    <div class="bg-slate-900 rounded-3xl overflow-hidden shadow-2xl border-4 border-pink-500/40">
+                        <iframe sandbox="allow-scripts allow-same-origin allow-pointer-lock allow-modals" src="${blobUrl}" class="w-full h-[700px] border-none"></iframe>
+                    </div>
+                </div>
+            `;
+        }
+
+        window.getUserBadges = function(user, allGamesCount) {
+            let badges = [];
+            const historyActions = (user.history || []).map(h => h.action);
+            const playedAll = allGamesCount > 0 && DB.getGames().every(g => historyActions.some(act => act.includes(g.title)));
+            if (playedAll || user.role === 'admin') badges.push({ name: '遊戲大師', desc: '玩過所有遊戲' });
+            if ((user.companions || []).length >= 5 || user.role === 'admin') badges.push({ name: '精靈收藏家', desc: '擁全 5 種精靈' });
+            if ((user.inventory || []).length >= 6 || user.role === 'admin') badges.push({ name: '變裝達人', desc: '擁有 6 件以上服飾' });
+            return badges;
+        }
+
+        window.renderHomeland = function(session) {
+            const bgObj = session.background ? getStoreItemObject(session.background) : null;
+            const bgSvg = bgObj ? bgObj.svg : '';
+            const badges = getUserBadges(session, DB.getGames().length);
+
+            return `
+                <div class="grid md:grid-cols-2 gap-8">
+                    <div class="relative overflow-hidden p-8 rounded-3xl shadow-xl border-4 border-emerald-500/30 text-center space-y-6 bg-slate-900/90">
+                        ${bgSvg ? `<div class="absolute inset-0 opacity-40 z-0 pointer-events-none">${bgSvg}</div>` : ''}
+                        <div class="relative z-10 space-y-6">
+                            <h2 class="text-3xl font-black text-white">🏡 個人檔案與徽章</h2>
+                            <div class="p-8 bg-slate-950/60 backdrop-blur-md rounded-3xl border-2 border-purple-500/30 shadow-inner">
+                                ${renderAvatarSVG(session.gender, session.equipped)}
+                            </div>
+                            <div class="text-2xl font-black text-white">${session.username}</div>
+                            <div class="p-4 bg-slate-950/80 rounded-2xl border border-slate-800">
+                                <div class="font-black text-amber-400 mb-2">🏅 我的成就徽章</div>
+                                <div class="flex flex-wrap gap-2 justify-center">
+                                    ${badges.map(b => `<span class="px-3 py-1 bg-amber-950 text-amber-200 border border-amber-500/40 rounded-full text-xs font-bold" title="${b.desc}">${b.name}</span>`).join('')}
+                                </div>
+                            </div>
+                            <button onclick="window.renderWardrobeModal()" class="w-full py-3.5 bg-pink-600 text-white font-black rounded-2xl shadow-lg hover:bg-pink-700 transition">管理衣櫥</button>
+                        </div>
+                    </div>
+                    <div class="bg-slate-900/90 backdrop-blur-md p-8 rounded-3xl shadow-xl border-4 border-emerald-500/30 space-y-6">
+                        <h2 class="text-3xl font-black text-white">🐾 精靈養成系統</h2>
+                        <div class="grid grid-cols-1 gap-6">
+                            ${session.companions.map((c, idx) => `
+                                <div class="p-5 bg-slate-950/80 rounded-2xl border-2 border-slate-800 space-y-4">
+                                    <div class="flex items-center justify-between">
+                                        ${renderCompanionSVG(c, session.username)}
+                                        <div class="space-y-3 flex-1 ml-6">
+                                            <div class="flex gap-2 items-center">
+                                                <input type="number" id="train-${idx}" min="1" max="10000" value="100" class="w-24 p-2.5 bg-slate-900 border-2 border-slate-700 rounded-xl text-center font-black text-white">
+                                            </div>
+                                            <button onclick="window.trainPet(${idx})" class="w-full py-2.5 bg-purple-600 text-white font-black rounded-xl shadow">培養精靈</button>
+                                        </div>
+                                    </div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                </div>
+                <div id="wardrobe-modal"></div>
+            `;
+        }
+
+        window.trainPet = function(idx) {
+            const session = DB.getSession();
+            const amount = parseInt(document.getElementById(`train-${idx}`).value) || 1;
+            if (session.points < amount) { alert('點數不足！'); return; }
+            session.points -= amount;
+            session.companions[idx].exp += amount;
+            DB.setSession(session);
+            updateUserInDB(session);
+            render();
+        }
+
+        window.renderWardrobeModal = function() {
+            const session = DB.getSession();
+            const store = getDefaultStore();
+            const html = `
+                <div class="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+                    <div class="bg-slate-900 p-8 rounded-3xl max-w-3xl w-full max-h-[85vh] overflow-y-auto space-y-6 shadow-2xl border-4 border-pink-500/40">
+                        <div class="flex justify-between items-center">
+                            <h3 class="text-3xl font-black text-white">👕 我的衣櫥</h3>
+                            <button onclick="document.getElementById('wardrobe-modal').innerHTML=''" class="font-black text-xl px-4 py-2 bg-slate-800 text-white rounded-xl">✕</button>
+                        </div>
+                        <div class="grid grid-cols-2 md:grid-cols-3 gap-4">
+                            ${session.inventory.map(itemId => {
+                                const item = store.find(s => s.id === itemId);
+                                const isEquipped = item.slot === 'background' ? session.background === item.id : session.equipped[item.slot] === item.id;
+                                return `
+                                    <div class="p-4 bg-slate-950 border-2 ${isEquipped ? 'border-pink-500' : 'border-slate-800'} rounded-2xl text-center space-y-3">
+                                        <div class="text-3xl mb-2">${item.icon}</div>
+                                        <div class="font-black text-white">${item.name}</div>
+                                        <div class="flex gap-2">
+                                            <button onclick="window.equipItem(${item.id}, '${item.slot}')" class="flex-1 py-2 bg-purple-600 text-white font-black rounded-xl text-sm">穿上/套用</button>
+                                        </div>
+                                    </div>
+                                `;
+                            }).join('')}
+                        </div>
+                    </div>
+                </div>
+            `;
+            document.getElementById('wardrobe-modal').innerHTML = html;
+        }
+
+        window.equipItem = function(itemId, slot) {
+            const session = DB.getSession();
+            if (slot === 'background') session.background = itemId;
+            else session.equipped[slot] = itemId;
+            DB.setSession(session);
+            updateUserInDB(session);
+            renderWardrobeModal();
+            render();
+        }
+
+        window.renderStore = function(session) {
+            const store = getDefaultStore();
+            return `
+                <div class="space-y-6">
+                    <h1 class="text-4xl font-black text-white">🛍️ 服裝與背景商店</h1>
+                    <div class="grid md:grid-cols-4 gap-6">
+                        ${store.map(item => `
+                            <div class="bg-slate-900/90 backdrop-blur-md p-6 rounded-3xl shadow-xl border-4 border-pink-500/30 flex flex-col justify-between text-center">
+                                <div>
+                                    <div class="text-6xl my-4">${item.icon}</div>
+                                    <div class="text-xl font-black text-white">${item.name}</div>
+                                    <div class="text-amber-400 font-black mt-2 text-lg">⭐ ${item.price} 點</div>
+                                </div>
+                                <button onclick="window.buyItem(${item.id},${item.price})" class="mt-6 py-3 bg-pink-600 text-white font-black rounded-2xl shadow-md">購買商品</button>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            `;
+        }
+
+        window.buyItem = function(itemId, price) {
+            const session = DB.getSession();
+            if (session.inventory.includes(itemId)) { alert('您已擁有此商品！'); return; }
+            if (session.points < price) { alert('點數不足！'); return; }
+            session.points -= price;
+            session.inventory.push(itemId);
+            DB.setSession(session);
+            updateUserInDB(session);
+            alert('購買成功！');
+            render();
+        }
+
+        window.renderRanking = function() {
+            const users = DB.getUsers().filter(u => u.role === 'student').sort((a, b) => b.points - a.points);
+            return `
+                <div class="space-y-6">
+                    <h1 class="text-4xl font-black text-white">🏆 精靈大師排行榜</h1>
+                    <div class="bg-slate-900/90 backdrop-blur-md p-8 rounded-3xl shadow-xl border-4 border-amber-500/30 space-y-4">
+                        ${users.map((u, index) => `
+                            <div class="p-4 bg-slate-950/80 rounded-2xl border-2 border-slate-800 flex justify-between items-center">
+                                <div class="font-black text-lg text-white">#${index + 1}${u.username}</div>
+                                <div class="text-amber-400 font-black text-xl">⭐ ${u.points} 積分</div>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            `;
+        }
+
+        window.renderFriends = function(session) {
+            return `
+                <div class="space-y-6 text-center">
+                    <h1 class="text-4xl font-black text-white">👥 好友系統</h1>
+                    <div class="bg-slate-900 p-8 rounded-3xl border border-slate-800 inline-block">
+                        <p class="text-slate-400 font-bold">好友功能建置中，雲端連線正常運作！</p>
+                    </div>
+                </div>
+            `;
+        }
+
+        window.renderAdmin = function() {
+            const pendingList = DB.getPending();
+            return `
+                <div class="space-y-8">
+                    <h1 class="text-4xl font-black text-white">⚙️ 雲端管理員工作室</h1>
+                    <div class="bg-slate-900/90 backdrop-blur-md p-8 rounded-3xl shadow-xl border-4 border-amber-500/30 space-y-6">
+                        <h2 class="text-2xl font-black text-white">待審核註冊申請 (${pendingList.length})</h2>
+                        <div class="space-y-4">
+                            ${pendingList.length === 0 ? '<p class="text-slate-400 font-bold">目前沒有等待審核的註冊申請</p>' : ''}
+                            ${pendingList.map(p => `
+                                <div class="p-4 bg-slate-950 rounded-2xl border border-slate-800 flex justify-between items-center">
+                                    <div>
+                                        <div class="font-black text-lg text-white">帳號: ${p.username}</div>
+                                        <div class="text-xs text-slate-400 font-bold">初始精靈: ${p.companionType}</div>
+                                    </div>
+                                    <div class="flex gap-2">
+                                        <button onclick="window.approveRegistration(${p.id})" class="px-4 py-2 bg-emerald-600 text-white font-black rounded-xl text-sm">允許</button>
+                                        <button onclick="window.declineRegistration(${p.id})" class="px-4 py-2 bg-red-600 text-white font-black rounded-xl text-sm">拒絕</button>
+                                    </div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        window.approveRegistration = function(id) {
+            let pending = DB.getPending();
+            const p = pending.find(x => x.id === id);
+            if (p) {
+                let users = DB.getUsers();
+                users.push({
+                    id: Date.now(), username: p.username, password: p.password, role: 'student', points: 100,
+                    gender: p.gender, companions: [{ type: p.companionType, exp: 1, weapon: null }], inventory: [], equipped: {}, background: '', friends: [], friendRequests: [], history: [], isBannedPoints: false
+                });
+                DB.saveUsers(users);
+                pending = pending.filter(x => x.id !== id);
+                DB.savePending(pending);
+                alert('已允許該玩家註冊！');
+                render();
+            }
+        }
+
+        window.declineRegistration = function(id) {
+            let pending = DB.getPending();
+            pending = pending.filter(x => x.id !== id);
+            DB.savePending(pending);
+            alert('已拒絕該玩家註冊。');
+            render();
+        }
+
+        window.updateUserInDB = function(sessionUser) {
+            const users = DB.getUsers();
+            if (sessionUser.role === 'admin' || sessionUser.username === 'adminamy') sessionUser.points = 999999;
+            const idx = users.findIndex(x => x.id === sessionUser.id);
+            if (idx !== -1) { users[idx] = sessionUser; DB.saveUsers(users); }
+        }
+
+        // --- 啟動 Firebase 即時監聽 ---
+        onValue(ref(db, 'hh_data'), (snapshot) => {
+            const data = snapshot.val();
+            if (data) {
+                memoryCache.users = data.users || [];
+                memoryCache.pending = data.pending || [];
+                memoryCache.games = data.games || getDefaultGames();
+                memoryCache.store = data.store || getDefaultStore();
+            } else {
+                initCloudDB();
+            }
+            render();
+        });
+    </script>
+</body>
+</html>
